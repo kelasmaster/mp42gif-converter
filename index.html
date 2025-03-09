@@ -92,8 +92,8 @@
         <video id="videoPreview" controls class="hidden"></video>
         
         <div class="controls">
-            <input type="number" id="startTime" placeholder="Start time (sec)" step="0.1">
-            <input type="number" id="endTime" placeholder="End time (sec)" step="0.1">
+            <input type="number" id="startTime" placeholder="Start time (sec)" step="0.1" min="0">
+            <input type="number" id="endTime" placeholder="End time (sec)" step="0.1" min="0">
         </div>
         
         <button id="convertBtn" disabled>Convert to GIF</button>
@@ -116,12 +116,19 @@
         const endTimeInput = document.getElementById('endTime');
 
         let videoFile;
+        let isFFmpegLoaded = false;
 
         // Initialize FFmpeg
         (async () => {
-            await ffmpeg.load();
-            convertBtn.disabled = false;
-            console.log('FFmpeg ready');
+            try {
+                await ffmpeg.load();
+                isFFmpegLoaded = true;
+                updateConvertButtonState();
+                console.log('FFmpeg ready');
+            } catch (e) {
+                alert('Failed to load video converter');
+                console.error(e);
+            }
         })();
 
         // File handling
@@ -149,20 +156,60 @@
         }
 
         function handleFile(file) {
-            if (!file.type.startsWith('video/mp4')) {
-                alert('Please select an MP4 file');
+            if (!file || !file.type.startsWith('video/mp4')) {
+                alert('Please select a valid MP4 file');
                 return;
             }
             
             videoFile = file;
             videoPreview.src = URL.createObjectURL(file);
             videoPreview.classList.remove('hidden');
-            startTimeInput.max = endTimeInput.max = videoPreview.duration.toFixed(1);
+            
+            // Wait for video metadata to load
             videoPreview.addEventListener('loadedmetadata', () => {
-                startTimeInput.max = endTimeInput.max = videoPreview.duration.toFixed(1);
-                endTimeInput.value = videoPreview.duration.toFixed(1);
+                const duration = videoPreview.duration;
+                startTimeInput.max = duration.toFixed(1);
+                endTimeInput.max = duration.toFixed(1);
+                endTimeInput.value = duration.toFixed(1);
+                updateConvertButtonState();
             });
         }
+
+        function updateConvertButtonState() {
+            convertBtn.disabled = !(
+                isFFmpegLoaded &&
+                videoFile &&
+                startTimeInput.checkValidity() &&
+                endTimeInput.checkValidity()
+            );
+        }
+
+        // Time input validation
+        startTimeInput.addEventListener('input', () => {
+            const start = parseFloat(startTimeInput.value);
+            const end = parseFloat(endTimeInput.value);
+            
+            if (start >= end) {
+                startTimeInput.setCustomValidity('Start time must be before end time');
+            } else {
+                startTimeInput.setCustomValidity('');
+            }
+            
+            updateConvertButtonState();
+        });
+
+        endTimeInput.addEventListener('input', () => {
+            const start = parseFloat(startTimeInput.value);
+            const end = parseFloat(endTimeInput.value);
+            
+            if (end <= start) {
+                endTimeInput.setCustomValidity('End time must be after start time');
+            } else {
+                endTimeInput.setCustomValidity('');
+            }
+            
+            updateConvertButtonState();
+        });
 
         // Conversion
         convertBtn.addEventListener('click', async () => {
@@ -171,38 +218,43 @@
             const start = parseFloat(startTimeInput.value) || 0;
             const end = parseFloat(endTimeInput.value) || videoPreview.duration;
             
-            if (start >= end) {
-                alert('End time must be after start time');
+            if (isNaN(start) || isNaN(end) || start >= end) {
+                alert('Please enter valid start and end times');
                 return;
             }
 
             convertBtn.disabled = true;
             dropZone.textContent = 'Converting... Please wait';
             
-            // Write file to FFmpeg
-            ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(videoFile));
-            
-            // Run FFmpeg command
-            await ffmpeg.run(
-                '-i', 'input.mp4',
-                '-ss', start.toString(),
-                '-to', end.toString(),
-                '-vf', 'fps=10,scale=320:-1:flags=lanczos',
-                '-c:v', 'gif',
-                'output.gif'
-            );
-            
-            // Read result
-            const data = ffmpeg.FS('readFile', 'output.gif');
-            
-            // Create download link
-            const url = URL.createObjectURL(new Blob([data.buffer]));
-            downloadLink.href = url;
-            downloadLink.classList.remove('hidden');
-            
-            // Reset UI
-            convertBtn.disabled = false;
-            dropZone.textContent = 'Drag & Drop MP4 here or click to select';
+            try {
+                // Write file to FFmpeg
+                ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(videoFile));
+                
+                // Run FFmpeg command
+                await ffmpeg.run(
+                    '-i', 'input.mp4',
+                    '-ss', start.toString(),
+                    '-to', end.toString(),
+                    '-vf', 'fps=10,scale=320:-1:flags=lanczos',
+                    '-c:v', 'gif',
+                    'output.gif'
+                );
+                
+                // Read result
+                const data = ffmpeg.FS('readFile', 'output.gif');
+                
+                // Create download link
+                const url = URL.createObjectURL(new Blob([data.buffer]));
+                downloadLink.href = url;
+                downloadLink.classList.remove('hidden');
+            } catch (e) {
+                alert('Conversion failed. Please check your input file and try again.');
+                console.error(e);
+            } finally {
+                // Reset UI
+                convertBtn.disabled = false;
+                dropZone.textContent = 'Drag & Drop MP4 here or click to select';
+            }
         });
     </script>
 </body>
