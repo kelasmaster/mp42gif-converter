@@ -1,108 +1,29 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MP4 to GIF Converter</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-
-        .container {
-            width: 100%;
-            max-width: 600px;
-            background: #f5f5f5;
-            border-radius: 10px;
-            padding: 20px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-
-        .drop-zone {
-            border: 2px dashed #ccc;
-            border-radius: 10px;
-            padding: 40px;
-            text-align: center;
-            cursor: pointer;
-            transition: border-color 0.3s;
-        }
-
-        .drop-zone:hover {
-            border-color: #4CAF50;
-        }
-
-        video {
-            width: 100%;
-            margin: 20px 0;
-            border-radius: 5px;
-        }
-
-        .controls {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 15px;
-            margin: 20px 0;
-        }
-
-        .controls input {
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            width: 100%;
-        }
-
-        button {
-            background: #4CAF50;
-            color: white;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            transition: background 0.3s;
-            width: 100%;
-        }
-
-        button:disabled {
-            background: #cccccc;
-            cursor: not-allowed;
-        }
-
-        .hidden {
-            display: none;
-        }
-
-        @media (max-width: 600px) {
-            .controls {
-                grid-template-columns: 1fr;
-            }
-        }
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .container { background: #f0f0f0; padding: 20px; border-radius: 10px; }
+        .drop-zone { border: 2px dashed #666; padding: 40px; text-align: center; cursor: pointer; }
+        video { width: 100%; margin: 10px 0; }
+        .controls { display: flex; gap: 10px; margin: 10px 0; }
+        input[type=number] { width: 100%; padding: 8px; }
+        button { background: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; }
+        button:disabled { background: #ccc; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="drop-zone" id="dropZone">
-            Drag & Drop MP4 here or click to select
-        </div>
-        <input type="file" accept="video/mp4" class="hidden" id="fileInput">
-        
-        <video id="videoPreview" controls class="hidden"></video>
-        
+        <div class="drop-zone" id="dropZone">Drag & Drop MP4 or click to select</div>
+        <input type="file" accept="video/mp4" hidden id="fileInput">
+        <video id="videoPreview" controls hidden></video>
         <div class="controls">
-            <input type="number" id="startTime" placeholder="Start time (sec)" step="0.1" min="0">
-            <input type="number" id="endTime" placeholder="End time (sec)" step="0.1" min="0">
+            <input id="startTime" type="number" step="0.1" placeholder="Start (sec)">
+            <input id="endTime" type="number" step="0.1" placeholder="End (sec)">
         </div>
-        
         <button id="convertBtn" disabled>Convert to GIF</button>
-        <a id="downloadLink" class="hidden" download="output.gif">
-            <button>Download GIF</button>
-        </a>
+        <a id="downloadLink" hidden download="output.gif"></a>
     </div>
 
     <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.0/dist/ffmpeg.min.js"></script>
@@ -110,155 +31,82 @@
         const { createFFmpeg, fetchFile } = FFmpeg;
         const ffmpeg = createFFmpeg({ log: true });
         
-        const dropZone = document.getElementById('dropZone');
-        const fileInput = document.getElementById('fileInput');
-        const videoPreview = document.getElementById('videoPreview');
-        const convertBtn = document.getElementById('convertBtn');
-        const downloadLink = document.getElementById('downloadLink');
-        const startTimeInput = document.getElementById('startTime');
-        const endTimeInput = document.getElementById('endTime');
-
-        let videoFile;
-        let isFFmpegLoaded = false;
+        let videoFile, videoDuration;
 
         // Initialize FFmpeg
         (async () => {
             try {
                 await ffmpeg.load();
-                isFFmpegLoaded = true;
-                updateButtonState();
-                console.log('FFmpeg ready');
+                document.getElementById('convertBtn').disabled = false;
             } catch (e) {
                 alert('Failed to load converter engine');
-                console.error(e);
             }
         })();
 
         // File handling
-        dropZone.addEventListener('click', () => fileInput.click());
-        fileInput.addEventListener('change', handleFileSelect);
+        document.getElementById('dropZone').addEventListener('click', () => 
+            document.getElementById('fileInput').click()
+        );
 
-        dropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            dropZone.style.borderColor = '#4CAF50';
-        });
+        document.getElementById('fileInput').addEventListener('change', (e) => 
+            handleFile(e.target.files[0])
+        );
 
-        dropZone.addEventListener('dragleave', () => {
-            dropZone.style.borderColor = '#ccc';
-        });
+        async function handleFile(file) {
+            if (!file || !file.type.startsWith('video/mp4')) return;
 
-        dropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            dropZone.style.borderColor = '#ccc';
-            handleFile(e.dataTransfer.files[0]);
-        });
-
-        function handleFileSelect(e) {
-            handleFile(e.target.files[0]);
-        }
-
-        function handleFile(file) {
-            if (!file || !file.type.startsWith('video/mp4')) {
-                alert('Please select a valid MP4 file');
-                return;
-            }
-            
             videoFile = file;
-            videoPreview.src = URL.createObjectURL(file);
-            videoPreview.classList.remove('hidden');
-            
-            // Set duration when metadata loads
-            videoPreview.addEventListener('loadedmetadata', () => {
-                const duration = videoPreview.duration;
-                const roundedDuration = Math.floor(duration * 10) / 10; // One decimal
-                
-                startTimeInput.max = roundedDuration;
-                endTimeInput.max = roundedDuration;
-                endTimeInput.value = roundedDuration;
-                
-                updateButtonState();
+            const video = document.getElementById('videoPreview');
+            video.src = URL.createObjectURL(file);
+            video.hidden = false;
+
+            video.addEventListener('loadedmetadata', () => {
+                videoDuration = video.duration;
+                document.getElementById('endTime').placeholder = `End (max ${videoDuration.toFixed(1)}s)`;
+                document.getElementById('endTime').max = videoDuration;
+                document.getElementById('convertBtn').disabled = false;
             });
         }
 
-        function updateButtonState() {
-            const hasValidFile = !!videoFile;
-            const hasValidTimes = !isNaN(endTimeInput.value) && 
-                                 (parseFloat(endTimeInput.value) > 0);
-            
-            convertBtn.disabled = !(
-                isFFmpegLoaded &&
-                hasValidFile &&
-                hasValidTimes
-            );
-        }
-
-        // Time input validation
-        startTimeInput.addEventListener('input', () => {
-            const start = parseFloat(startTimeInput.value) || 0;
-            const end = parseFloat(endTimeInput.value) || 0;
-            
-            if (start >= end) {
-                startTimeInput.setCustomValidity('Start must be before end');
-            } else {
-                startTimeInput.setCustomValidity('');
-            }
-            
-            updateButtonState();
-        });
-
-        endTimeInput.addEventListener('input', () => {
-            const start = parseFloat(startTimeInput.value) || 0;
-            const end = parseFloat(endTimeInput.value) || 0;
-            
-            if (end <= start) {
-                endTimeInput.setCustomValidity('End must be after start');
-            } else {
-                endTimeInput.setCustomValidity('');
-            }
-            
-            updateButtonState();
-        });
-
         // Conversion
-        convertBtn.addEventListener('click', async () => {
-            const start = parseFloat(startTimeInput.value) || 0;
-            const end = parseFloat(endTimeInput.value) || videoPreview.duration;
-            
-            if (isNaN(end) || start >= end) {
-                alert('Invalid time range');
+        document.getElementById('convertBtn').addEventListener('click', async () => {
+            const start = parseFloat(document.getElementById('startTime').value) || 0;
+            const end = parseFloat(document.getElementById('endTime').value) || videoDuration;
+
+            if (start >= end) {
+                alert('End time must be after start time');
                 return;
             }
 
-            convertBtn.disabled = true;
-            dropZone.textContent = 'Converting... Please wait';
-            
             try {
-                // Write file to FFmpeg
+                document.getElementById('convertBtn').disabled = true;
+                document.getElementById('dropZone').textContent = 'Converting...';
+
                 ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(videoFile));
-                
-                // Run FFmpeg command
                 await ffmpeg.run(
                     '-i', 'input.mp4',
                     '-ss', start.toString(),
                     '-to', end.toString(),
-                    '-vf', 'fps=10,scale=320:-1:flags=lanczos',
+                    '-vf', 'fps=15,scale=480:-1',
                     '-c:v', 'gif',
                     'output.gif'
                 );
-                
-                // Read result
+
                 const data = ffmpeg.FS('readFile', 'output.gif');
-                
-                // Create download link
                 const url = URL.createObjectURL(new Blob([data.buffer]));
-                downloadLink.href = url;
-                downloadLink.classList.remove('hidden');
+                
+                const link = document.getElementById('downloadLink');
+                link.href = url;
+                link.download = 'output.gif';
+                link.textContent = 'Download GIF';
+                link.hidden = false;
+
             } catch (e) {
-                alert('Conversion failed. Check console for details.');
                 console.error(e);
+                alert('Conversion failed');
             } finally {
-                convertBtn.disabled = false;
-                dropZone.textContent = 'Drag & Drop MP4 here or click to select';
+                document.getElementById('convertBtn').disabled = false;
+                document.getElementById('dropZone').textContent = 'Drag & Drop MP4 or click to select';
             }
         });
     </script>
