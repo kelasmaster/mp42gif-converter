@@ -55,6 +55,7 @@
             padding: 8px;
             border: 1px solid #ddd;
             border-radius: 4px;
+            width: 100%;
         }
 
         button {
@@ -65,10 +66,12 @@
             border-radius: 5px;
             cursor: pointer;
             transition: background 0.3s;
+            width: 100%;
         }
 
         button:disabled {
             background: #cccccc;
+            cursor: not-allowed;
         }
 
         .hidden {
@@ -123,10 +126,10 @@
             try {
                 await ffmpeg.load();
                 isFFmpegLoaded = true;
-                updateConvertButtonState();
+                updateButtonState();
                 console.log('FFmpeg ready');
             } catch (e) {
-                alert('Failed to load video converter');
+                alert('Failed to load converter engine');
                 console.error(e);
             }
         })();
@@ -147,8 +150,7 @@
         dropZone.addEventListener('drop', (e) => {
             e.preventDefault();
             dropZone.style.borderColor = '#ccc';
-            const file = e.dataTransfer.files[0];
-            handleFile(file);
+            handleFile(e.dataTransfer.files[0]);
         });
 
         function handleFileSelect(e) {
@@ -165,61 +167,65 @@
             videoPreview.src = URL.createObjectURL(file);
             videoPreview.classList.remove('hidden');
             
-            // Wait for video metadata to load
+            // Set duration when metadata loads
             videoPreview.addEventListener('loadedmetadata', () => {
                 const duration = videoPreview.duration;
-                startTimeInput.max = duration.toFixed(1);
-                endTimeInput.max = duration.toFixed(1);
-                endTimeInput.value = duration.toFixed(1);
-                updateConvertButtonState();
+                const roundedDuration = Math.floor(duration * 10) / 10; // One decimal
+                
+                startTimeInput.max = roundedDuration;
+                endTimeInput.max = roundedDuration;
+                endTimeInput.value = roundedDuration;
+                
+                updateButtonState();
             });
         }
 
-        function updateConvertButtonState() {
+        function updateButtonState() {
+            const hasValidFile = !!videoFile;
+            const hasValidTimes = !isNaN(endTimeInput.value) && 
+                                 (parseFloat(endTimeInput.value) > 0);
+            
             convertBtn.disabled = !(
                 isFFmpegLoaded &&
-                videoFile &&
-                startTimeInput.checkValidity() &&
-                endTimeInput.checkValidity()
+                hasValidFile &&
+                hasValidTimes
             );
         }
 
         // Time input validation
         startTimeInput.addEventListener('input', () => {
-            const start = parseFloat(startTimeInput.value);
-            const end = parseFloat(endTimeInput.value);
+            const start = parseFloat(startTimeInput.value) || 0;
+            const end = parseFloat(endTimeInput.value) || 0;
             
             if (start >= end) {
-                startTimeInput.setCustomValidity('Start time must be before end time');
+                startTimeInput.setCustomValidity('Start must be before end');
             } else {
                 startTimeInput.setCustomValidity('');
             }
             
-            updateConvertButtonState();
+            updateButtonState();
         });
 
         endTimeInput.addEventListener('input', () => {
-            const start = parseFloat(startTimeInput.value);
-            const end = parseFloat(endTimeInput.value);
+            const start = parseFloat(startTimeInput.value) || 0;
+            const end = parseFloat(endTimeInput.value) || 0;
             
             if (end <= start) {
-                endTimeInput.setCustomValidity('End time must be after start time');
+                endTimeInput.setCustomValidity('End must be after start');
             } else {
                 endTimeInput.setCustomValidity('');
             }
             
-            updateConvertButtonState();
+            updateButtonState();
         });
 
         // Conversion
         convertBtn.addEventListener('click', async () => {
-            if (!videoFile) return;
-            
             const start = parseFloat(startTimeInput.value) || 0;
             const end = parseFloat(endTimeInput.value) || videoPreview.duration;
             
-            if (isNaN(start) || isNaN(end) || start >= end) {
-                alert('Please enter valid start and end times');
+            if (isNaN(end) || start >= end) {
+                alert('Invalid time range');
                 return;
             }
 
@@ -248,10 +254,9 @@
                 downloadLink.href = url;
                 downloadLink.classList.remove('hidden');
             } catch (e) {
-                alert('Conversion failed. Please check your input file and try again.');
+                alert('Conversion failed. Check console for details.');
                 console.error(e);
             } finally {
-                // Reset UI
                 convertBtn.disabled = false;
                 dropZone.textContent = 'Drag & Drop MP4 here or click to select';
             }
